@@ -55,6 +55,8 @@ if __name__ == "__main__":
   parser.add_argument('--results-per-iteration', type=int, default=100, help='passed to arxiv API')
   parser.add_argument('--wait-time', type=float, default=5.0, help='lets be gentle to arxiv API (in number of seconds)')
   parser.add_argument('--break-on-no-added', type=int, default=1, help='break out early if all returned query papers are already in db? 1=yes, 0=no')
+  parser.add_argument('--retry-on-no-results', type=int, default=1, help='pause for a longer period and then retry no results are return? 1=yes, 0=no')
+  parser.add_argument('--retry-wait-time', type=float, default=5.0, help='wait before retrying (minutes)')
   args = parser.parse_args()
 
   # misc hardcoded variables
@@ -74,54 +76,63 @@ if __name__ == "__main__":
   # main loop where we fetch the new results
   print('database has %d entries at start' % (len(db), ))
   num_added_total = 0
+  
   for i in range(args.start_index, args.max_index, args.results_per_iteration):
+    retry = True
+    while retry:
+      print("Results %i - %i" % (i,i+args.results_per_iteration))
+      query = 'search_query=%s&sortBy=lastUpdatedDate&start=%i&max_results=%i' % (args.search_query,
+                                                          i, args.results_per_iteration)
+      with urllib.request.urlopen(base_url+query) as url:
+        response = url.read()
+      parse = feedparser.parse(response)
+      num_added = 0
+      num_skipped = 0
+      for e in parse.entries:
 
-    print("Results %i - %i" % (i,i+args.results_per_iteration))
-    query = 'search_query=%s&sortBy=lastUpdatedDate&start=%i&max_results=%i' % (args.search_query,
-                                                         i, args.results_per_iteration)
-    with urllib.request.urlopen(base_url+query) as url:
-      response = url.read()
-    parse = feedparser.parse(response)
-    num_added = 0
-    num_skipped = 0
-    for e in parse.entries:
+        j = encode_feedparser_dict(e)
 
-      j = encode_feedparser_dict(e)
+        # extract just the raw arxiv id and version for this paper
+        rawid, version = parse_arxiv_url(j['id'])
+        j['_rawid'] = rawid
+        j['_version'] = version
 
-      # extract just the raw arxiv id and version for this paper
-      rawid, version = parse_arxiv_url(j['id'])
-      j['_rawid'] = rawid
-      j['_version'] = version
+        # add to our database if we didn't have it before, or if this is a new version
+        if not rawid in db or j['_version'] > db[rawid]['_version']:
+          db[rawid] = j
+          print('Updated %s added %s' % (j['updated'].encode('utf-8'), j['title'].encode('utf-8')))
+          num_added += 1
+          num_added_total += 1
+        else:
+          num_skipped += 1
 
-      # add to our database if we didn't have it before, or if this is a new version
-      if not rawid in db or j['_version'] > db[rawid]['_version']:
-        db[rawid] = j
-        print('Updated %s added %s' % (j['updated'].encode('utf-8'), j['title'].encode('utf-8')))
-        num_added += 1
-        num_added_total += 1
-      else:
-        num_skipped += 1
+      # print some information
+      print("With results %i - %i..." % (i,i+args.results_per_iteration))
+      print('Added %d papers, already had %d.' % (num_added, num_skipped))
 
-    # print some information
-    print("For results %i - %i..." % (i,i+args.results_per_iteration))
-    print('Added %d papers, already had %d.' % (num_added, num_skipped))
+      if len(parse.entries) == 0:
+        print('Received no results from arxiv. Rate limiting?')
+        print(response)
+        if args.retry-on-no-results == 1:
+          print('Sleeping for %i minutes' % (args.retry_wait_time , ))
+          time.sleep(args.retry_wait_time*60 + random.uniform(0, 3))
+          continue
+        else:
+          print('Exiting. Restart later maybe.')
+          break
 
-    if len(parse.entries) == 0:
-      print('Received no results from arxiv. Rate limiting? Exiting. Restart later maybe.')
-      print(response)
-      break
+      if num_added == 0 and args.break_on_no_added == 1:
+        print('No new papers were added. Assuming no new papers exist. Exiting.')
+        break
 
-    if num_added == 0 and args.break_on_no_added == 1:
-      print('No new papers were added. Assuming no new papers exist. Exiting.')
-      break
+      # Save the database so that it's updated if the script is interrupted  
+      if num_added_total > 0:
+        print('Saving database with %d papers to %s' % (len(db), Config.db_path))
+        safe_pickle_dump(db, Config.db_path)
 
-    # Save the database so that it's updated if the script is interrupted  
-    if num_added_total > 0:
-      print('Saving database with %d papers to %s' % (len(db), Config.db_path))
-      safe_pickle_dump(db, Config.db_path)
-
-    print('Sleeping for %i seconds' % (args.wait_time , ))
-    time.sleep(args.wait_time + random.uniform(0, 3))
+      print('Sleeping for %i seconds' % (args.wait_time , ))
+      time.sleep(args.wait_time + random.uniform(0, 3))
+      retry = False
 
   # save the database before we quit, if we found anything new
   if num_added_total > 0:
