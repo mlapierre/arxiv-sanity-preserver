@@ -113,7 +113,7 @@ if __name__ == "__main__":
       if len(parse.entries) == 0:
         print('Received no results from arxiv. Rate limiting?')
         print(response)
-        if args.retry-on-no-results == 1:
+        if args.retry_on_no_results == 1:
           print('Sleeping for %i minutes' % (args.retry_wait_time , ))
           time.sleep(args.retry_wait_time*60 + random.uniform(0, 3))
           continue
