@@ -103,6 +103,7 @@ if __name__ == "__main__":
         num_skipped += 1
 
     # print some information
+    print("For results %i - %i..." % (i,i+args.results_per_iteration))
     print('Added %d papers, already had %d.' % (num_added, num_skipped))
 
     if len(parse.entries) == 0:
@@ -113,6 +114,11 @@ if __name__ == "__main__":
     if num_added == 0 and args.break_on_no_added == 1:
       print('No new papers were added. Assuming no new papers exist. Exiting.')
       break
+
+    # Save the database so that it's updated if the script is interrupted  
+    if num_added_total > 0:
+      print('Saving database with %d papers to %s' % (len(db), Config.db_path))
+      safe_pickle_dump(db, Config.db_path)
 
     print('Sleeping for %i seconds' % (args.wait_time , ))
     time.sleep(args.wait_time + random.uniform(0, 3))
