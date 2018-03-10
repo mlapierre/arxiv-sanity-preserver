@@ -1,0 +1,29 @@
+[[source]]
+
+url = "https://pypi.python.org/simple"
+verify_ssl = true
+name = "pypi"
+
+
+[packages]
+
+feedparser = "*"
+numpy = "*"
+scipy = "*"
+scikit-learn = "*"
+python-twitter = "*"
+pytz = "*"
+python-dateutil = "*"
+Flask = "*"
+Flask-Limiter = "*"
+tornado = "*"
+pymongo = "*"
+
+
+[dev-packages]
+
+
+
+[requires]
+
+#python_version = "2.7"
